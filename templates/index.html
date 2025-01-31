@@ -1,0 +1,147 @@
+<!-- filepath: /Users/aaron/Documents/code_repos/amazon_purchases/templates/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Amazon Spending Graphs</title>
+    <link
+      href="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/css/materialize.min.css"
+      rel="stylesheet"
+    />
+    <link
+      href="https://cdn.materialdesignicons.com/5.4.55/css/materialdesignicons.min.css"
+      rel="stylesheet"
+    />
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 20px;
+        background-color: #f4f4f4;
+        transition: background-color 0.3s, color 0.3s;
+      }
+      .dark-mode {
+        background-color: #121212;
+        color: #ffffff;
+      }
+      .container {
+        margin-top: 20px;
+      }
+      .card {
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        margin-bottom: 20px;
+        transition: background-color 0.3s, color 0.3s;
+      }
+      .dark-mode .card {
+        background-color: #1e1e1e;
+        color: #ffffff;
+      }
+      .card h2 {
+        color: #333;
+        font-size: 1.5em; /* Adjusted font size */
+      }
+      .dark-mode .card h2 {
+        color: #ffffff;
+      }
+      .btn {
+        background-color: #007bff;
+        color: #fff;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 5px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .btn:hover {
+        background-color: #0056b3;
+      }
+      .toggle-btn {
+        position: absolute;
+        top: 20px;
+        right: 20px;
+        cursor: pointer;
+      }
+      .mdi {
+        font-size: 2em;
+      }
+    </style>
+    <script>
+      function toggleDarkMode() {
+        document.body.classList.toggle("dark-mode");
+        const icon = document.getElementById("dark-mode-icon");
+        const darkModeInput = document.getElementById("dark-mode-input");
+        if (document.body.classList.contains("dark-mode")) {
+          icon.classList.remove("mdi-weather-sunny");
+          icon.classList.add("mdi-weather-night");
+          darkModeInput.value = "dark";
+        } else {
+          icon.classList.remove("mdi-weather-night");
+          icon.classList.add("mdi-weather-sunny");
+          darkModeInput.value = "light";
+        }
+      }
+
+      function submitForm() {
+        document.getElementById("filter-form").submit();
+      }
+    </script>
+  </head>
+  <body class="{{ 'dark-mode' if dark_mode == 'dark' else '' }}">
+    <div class="toggle-btn" onclick="toggleDarkMode()">
+      <i
+        id="dark-mode-icon"
+        class="mdi {{ 'mdi-weather-night' if dark_mode == 'dark' else 'mdi-weather-sunny' }}"
+      ></i>
+    </div>
+    <div class="container">
+      <h1 class="center-align">Amazon Spending Graphs</h1>
+      <div class="card">
+        <form id="filter-form" method="POST" enctype="multipart/form-data">
+          <input
+            type="hidden"
+            id="dark-mode-input"
+            name="dark_mode"
+            value="{{ dark_mode }}"
+          />
+          <div class="file-field input-field">
+            <div class="btn">
+              <span>Upload CSV File</span>
+              <input type="file" name="file" accept=".csv" required />
+            </div>
+            <div class="file-path-wrapper">
+              <input class="file-path validate" type="text" />
+            </div>
+          </div>
+          <input type="hidden" name="file_path" value="{{ file_path }}" />
+          <button type="submit" class="btn">Show Graphs</button>
+          <div class="row">
+            <div class="col s12">
+              <h2>Filter by Billing Address</h2>
+              {% for address in billing_addresses %}
+              <label>
+                <input type="checkbox" name="billing_address" value="{{ address
+                }}" onchange="submitForm()" {% if address in
+                request.form.getlist('billing_address') %}checked{% endif %}>
+                <span>{{ address }}</span> </label
+              ><br />
+              {% endfor %}
+            </div>
+          </div>
+        </form>
+      </div>
+      <div class="card">
+        <h2>Total Spent Per Month</h2>
+        {{ graph_monthly|safe }}
+      </div>
+      <div class="card">
+        <h2>Total Spent Per Year</h2>
+        {{ graph_yearly|safe }}
+      </div>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
+  </body>
+</html>
