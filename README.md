@@ -15,6 +15,8 @@ Upload amazon purchase data and get a few graphs of trends.
 
 ## Installation
 
+### Build Image Locally
+
 1. Clone the repository:
    ```sh
    git clone https://github.com/abrazier/amazon_purchases.git
@@ -27,6 +29,12 @@ Upload amazon purchase data and get a few graphs of trends.
 1. Run compose:
    ```
    docker compose up -d
+   ```
+
+### Pull from GHCR
+
+1. ```
+   docker pull ghcr.io/abrazier/amazon_purchases:latest
    ```
 
 ## Screenshots

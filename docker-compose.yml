@@ -1,6 +1,6 @@
 services:
   app:
-    build: .
+    image: ghcr.io/abrazier/amazon_purchases:latest
     container_name: amazon_purchases
     restart: always
     environment:
