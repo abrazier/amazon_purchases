@@ -38,5 +38,5 @@ jobs:
             requirements.txt
             app.py
             templates/index.html
-          env:
-            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
