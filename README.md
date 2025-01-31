@@ -10,10 +10,13 @@ Upload amazon purchase data and get a few graphs of trends.
 ![Amazon Data](screenshots/amazon_data.png)
 
 3. It takes a few hours but you will get an email to download the files. When the zip file downloads unzip it and take note of the csv file from the Retail.OrderHistory.1 folder called Retail.OrderHistory.1.csv.
-
 4. In the app click upload csv file, select the Retail.OrderHistory.1.csv, and then click show graphs
 
 ## Installation
+
+### Pull image from GHCR
+
+1. See example docker-compose.yml
 
 ### Build Image Locally
 
@@ -25,16 +28,10 @@ Upload amazon purchase data and get a few graphs of trends.
    ```
    docker build -t amazon_purchases .
    ```
-1. Update the docker-compose.yml as needed
+1. Delete the stock docker-compose.yml and rename docker-compose.local.yml to docker-compose.yml. Update the docker-compose.local.yml as needed
 1. Run compose:
    ```
    docker compose up -d
-   ```
-
-### Pull from GHCR
-
-1. ```
-   docker pull ghcr.io/abrazier/amazon_purchases:latest
    ```
 
 ## Screenshots
