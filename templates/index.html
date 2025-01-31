@@ -1,4 +1,3 @@
-<!-- filepath: /Users/aaron/Documents/code_repos/amazon_purchases/templates/index.html -->
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -40,7 +39,7 @@
       }
       .card h2 {
         color: #333;
-        font-size: 1.5em; /* Adjusted font size */
+        font-size: 1.5em;
       }
       .dark-mode .card h2 {
         color: #ffffff;
@@ -68,27 +67,33 @@
       .mdi {
         font-size: 2em;
       }
+      .progress-container {
+        display: none;
+        margin: 20px 0;
+        padding: 15px;
+        border-radius: 4px;
+        background-color: #f5f5f5;
+      }
+      .dark-mode .progress-container {
+        background-color: #2d2d2d;
+      }
+      .progress {
+        margin: 10px 0;
+        background-color: rgba(0, 0, 0, 0.1);
+      }
+      .dark-mode .progress {
+        background-color: rgba(255, 255, 255, 0.1);
+      }
+      .progress .determinate {
+        background-color: #007bff;
+        transition: width 0.3s ease;
+      }
+      #progress-text {
+        text-align: center;
+        margin: 5px 0;
+        font-weight: bold;
+      }
     </style>
-    <script>
-      function toggleDarkMode() {
-        document.body.classList.toggle("dark-mode");
-        const icon = document.getElementById("dark-mode-icon");
-        const darkModeInput = document.getElementById("dark-mode-input");
-        if (document.body.classList.contains("dark-mode")) {
-          icon.classList.remove("mdi-weather-sunny");
-          icon.classList.add("mdi-weather-night");
-          darkModeInput.value = "dark";
-        } else {
-          icon.classList.remove("mdi-weather-night");
-          icon.classList.add("mdi-weather-sunny");
-          darkModeInput.value = "light";
-        }
-      }
-
-      function submitForm() {
-        document.getElementById("filter-form").submit();
-      }
-    </script>
   </head>
   <body class="{{ 'dark-mode' if dark_mode == 'dark' else '' }}">
     <div class="toggle-btn" onclick="toggleDarkMode()">
@@ -118,6 +123,21 @@
           </div>
           <input type="hidden" name="file_path" value="{{ file_path }}" />
           <button type="submit" class="btn">Show Graphs</button>
+
+          <!-- Progress Bar -->
+          <div class="progress-container" id="progress-container">
+            <h5>Scraping Progress</h5>
+            <div class="progress">
+              <div
+                class="determinate"
+                id="progress-bar"
+                style="width: 0%"
+              ></div>
+            </div>
+            <p id="progress-text">0% Complete</p>
+            <p id="status-text">Waiting to start...</p>
+          </div>
+
           <div class="row">
             <div class="col s12">
               <h2>Filter by Billing Address</h2>
@@ -142,6 +162,72 @@
         {{ graph_yearly|safe }}
       </div>
     </div>
+
+    <script>
+      function toggleDarkMode() {
+        document.body.classList.toggle("dark-mode");
+        const icon = document.getElementById("dark-mode-icon");
+        const darkModeInput = document.getElementById("dark-mode-input");
+        if (document.body.classList.contains("dark-mode")) {
+          icon.classList.remove("mdi-weather-sunny");
+          icon.classList.add("mdi-weather-night");
+          darkModeInput.value = "dark";
+        } else {
+          icon.classList.remove("mdi-weather-night");
+          icon.classList.add("mdi-weather-sunny");
+          darkModeInput.value = "light";
+        }
+      }
+
+      function submitForm() {
+        document.getElementById("filter-form").submit();
+      }
+
+      let taskId = null;
+
+      document
+        .getElementById("filter-form")
+        .addEventListener("submit", function (e) {
+          e.preventDefault();
+          const progressContainer =
+            document.getElementById("progress-container");
+          progressContainer.style.display = "block";
+
+          fetch(this.action, {
+            method: "POST",
+            body: new FormData(this),
+          })
+            .then((response) => response.json())
+            .then((data) => {
+              if (data.task_id) {
+                taskId = data.task_id;
+                checkProgress();
+              }
+            });
+        });
+
+      function checkProgress() {
+        if (!taskId) return;
+
+        fetch(`/task_status/${taskId}`)
+          .then((response) => response.json())
+          .then((data) => {
+            const progressBar = document.getElementById("progress-bar");
+            const progressText = document.getElementById("progress-text");
+            const statusText = document.getElementById("status-text");
+
+            progressBar.style.width = `${(data.current / data.total) * 100}%`;
+            progressText.textContent = `${Math.round(
+              (data.current / data.total) * 100
+            )}% Complete`;
+            statusText.textContent = data.status;
+
+            if (data.state !== "SUCCESS" && data.state !== "FAILURE") {
+              setTimeout(checkProgress, 1000);
+            }
+          });
+      }
+    </script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
   </body>
 </html>

@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Filter by Category</title>
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='styles.css') }}"
+    />
+  </head>
+  <body>
+    <h1>Filter by Category</h1>
+    <form method="POST">
+      <label for="category">Select Category:</label>
+      <select name="category" id="category">
+        <option value="All">All</option>
+        {% for category in categories %}
+        <option value="{{ category }}">{{ category }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit">Filter</button>
+    </form>
+    <div>
+      <h2>Monthly Spending</h2>
+      {{ graph_monthly|safe }}
+    </div>
+    <div>
+      <h2>Yearly Spending</h2>
+      {{ graph_yearly|safe }}
+    </div>
+    <a href="{{ url_for('index') }}">Back to Home</a>
+  </body>
+</html>

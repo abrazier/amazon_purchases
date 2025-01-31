@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for
+from flask import Flask, render_template, request, redirect, url_for, jsonify
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -6,6 +6,10 @@ import plotly.io as pio
 import re
 import os
 import time
+from celery.result import AsyncResult
+from celery_worker import scrape_asins_task, celery
+from asin_scraper import create_database, get_existing_category
+import sqlite3
 
 app = Flask(__name__)
 UPLOAD_FOLDER = "uploads"
@@ -13,6 +17,9 @@ app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
+
+create_database()  # Ensure the database is created at startup
+
 
 def extract_unique_addresses(addresses):
     unique_addresses = set()
@@ -24,6 +31,7 @@ def extract_unique_addresses(addresses):
                 unique_address = match.group(0)
                 unique_addresses.add(unique_address)
     return sorted(list(unique_addresses))  # Sort the addresses
+
 
 @app.route("/", methods=["GET", "POST"])
 def index():
@@ -121,6 +129,10 @@ def index():
         graph_monthly = pio.to_html(fig_monthly, full_html=False)
         graph_yearly = pio.to_html(fig_yearly, full_html=False)
 
+        # Trigger the background task to scrape ASIN categories
+        asins = df["ASIN"].unique().tolist()
+        task = scrape_asins_task.delay(asins)
+
         return render_template(
             "index.html",
             graph_monthly=graph_monthly,
@@ -128,6 +140,7 @@ def index():
             billing_addresses=billing_addresses,
             file_path=file_path,
             dark_mode=dark_mode,
+            task_id=task.id,
         )
 
     return render_template(
@@ -137,6 +150,150 @@ def index():
         billing_addresses=billing_addresses,
         dark_mode=dark_mode,
     )
+
+
+@app.route("/filter_by_category", methods=["GET", "POST"])
+def filter_by_category():
+    categories = []
+    graph_monthly = ""
+    graph_yearly = ""
+    dark_mode = request.form.get("dark_mode", "light")
+
+    if request.method == "POST":
+        file_path = request.form.get("file_path")
+        if file_path:
+            df = pd.read_csv(file_path)
+        else:
+            return redirect(url_for("index"))
+
+        df["Order Date"] = pd.to_datetime(df["Order Date"], errors="coerce")
+        df["month"] = df["Order Date"].dt.to_period("M")
+        df["year"] = df["Order Date"].dt.year
+
+        # Get unique categories from the database
+        conn = sqlite3.connect("data/asin_categories.db")
+        cursor = conn.cursor()
+        cursor.execute("SELECT DISTINCT category FROM asin_categories")
+        categories = [row[0] for row in cursor.fetchall()]
+        conn.close()
+
+        selected_category = request.form.get("category")
+
+        if selected_category and selected_category != "All":
+            asins = df["ASIN"].unique().tolist()
+            filtered_asins = []
+            for asin in asins:
+                category = get_existing_category(asin)
+                if category == selected_category:
+                    filtered_asins.append(asin)
+            filtered_df = df[df["ASIN"].isin(filtered_asins)]
+        else:
+            filtered_df = df
+
+        monthly_totals = filtered_df.groupby("month")["Total Owed"].sum().reset_index()
+        monthly_totals["month"] = monthly_totals["month"].dt.strftime("%b-%Y")
+
+        yearly_totals = filtered_df.groupby("year")["Total Owed"].sum().reset_index()
+
+        # Calculate 3-month rolling average
+        monthly_totals["3_month_avg"] = (
+            monthly_totals["Total Owed"].rolling(window=3).mean()
+        )
+
+        # Calculate 3-year rolling average
+        yearly_totals["3_year_avg"] = (
+            yearly_totals["Total Owed"].rolling(window=3).mean()
+        )
+
+        fig_monthly = px.bar(
+            monthly_totals,
+            x="month",
+            y="Total Owed",
+            labels={"Total Owed": "Total Spent ($)"},
+        )
+        fig_yearly = px.bar(
+            yearly_totals,
+            x="year",
+            y="Total Owed",
+            labels={"Total Owed": "Total Spent ($)"},
+        )
+
+        fig_monthly.update_layout(yaxis_tickprefix="$", yaxis_tickformat=",")
+        fig_yearly.update_layout(yaxis_tickprefix="$", yaxis_tickformat=",")
+
+        fig_monthly.update_traces(texttemplate="%{y:$,.2f}", textposition="outside")
+        fig_yearly.update_traces(texttemplate="%{y:$,.2f}", textposition="outside")
+
+        # Add trend lines
+        fig_monthly.add_trace(
+            go.Scatter(
+                x=monthly_totals["month"],
+                y=monthly_totals["3_month_avg"],
+                mode="lines",
+                name="3-Month Average",
+                line=dict(color="firebrick", width=2),
+            )
+        )
+        fig_yearly.add_trace(
+            go.Scatter(
+                x=yearly_totals["year"],
+                y=yearly_totals["3_year_avg"],
+                mode="lines",
+                name="3-Year Average",
+                line=dict(color="firebrick", width=2),
+            )
+        )
+
+        graph_monthly = pio.to_html(fig_monthly, full_html=False)
+        graph_yearly = pio.to_html(fig_yearly, full_html=False)
+
+        return render_template(
+            "filter_by_category.html",
+            graph_monthly=graph_monthly,
+            graph_yearly=graph_yearly,
+            categories=categories,
+            file_path=file_path,
+            dark_mode=dark_mode,
+        )
+
+    return render_template(
+        "filter_by_category.html",
+        graph_monthly=graph_monthly,
+        graph_yearly=graph_yearly,
+        categories=categories,
+        dark_mode=dark_mode,
+    )
+
+
+@app.route("/task_status/<task_id>")
+def task_status(task_id):
+    task = AsyncResult(task_id, app=celery)
+    if task.state == "PENDING":
+        response = {
+            "state": task.state,
+            "current": 0,
+            "total": 1,
+            "status": "Pending...",
+        }
+    elif task.state != "FAILURE":
+        response = {
+            "state": task.state,
+            "current": task.info.get("current", 0),
+            "total": task.info.get("total", 1),
+            "status": task.info.get("status", ""),
+        }
+        if "result" in task.info:
+            response["result"] = task.info["result"]
+    else:
+        # something went wrong in the background job
+        response = {
+            "state": task.state,
+            "current": 1,
+            "total": 1,
+            "status": str(task.info),  # this is the exception raised
+        }
+    return jsonify(response)
+
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0")
