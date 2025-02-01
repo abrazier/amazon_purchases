@@ -12,6 +12,7 @@
       href="https://cdn.materialdesignicons.com/5.4.55/css/materialdesignicons.min.css"
       rel="stylesheet"
     />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
     <style>
       body {
         font-family: Arial, sans-serif;
@@ -124,7 +125,6 @@
           <input type="hidden" name="file_path" value="{{ file_path }}" />
           <button type="submit" class="btn">Show Graphs</button>
 
-          <!-- Progress Bar -->
           <div class="progress-container" id="progress-container">
             <h5>Scraping Progress</h5>
             <div class="progress">
@@ -145,9 +145,10 @@
               <label>
                 <input type="checkbox" name="billing_address" value="{{ address
                 }}" onchange="submitForm()" {% if address in
-                request.form.getlist('billing_address') %}checked{% endif %}>
-                <span>{{ address }}</span> </label
-              ><br />
+                request.form.getlist('billing_address') %}checked{% endif %} />
+                <span>{{ address }}</span>
+              </label>
+              <br />
               {% endfor %}
             </div>
           </div>
@@ -163,6 +164,7 @@
       </div>
     </div>
 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
     <script>
       function toggleDarkMode() {
         document.body.classList.toggle("dark-mode");
@@ -183,51 +185,38 @@
         document.getElementById("filter-form").submit();
       }
 
-      let taskId = null;
+      var socket = io({
+        reconnection: true,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 5000,
+        reconnectionAttempts: 5,
+        transports: ["websocket"],
+      });
 
-      document
-        .getElementById("filter-form")
-        .addEventListener("submit", function (e) {
-          e.preventDefault();
-          const progressContainer =
-            document.getElementById("progress-container");
-          progressContainer.style.display = "block";
+      socket.on("connect", function () {
+        console.log("Connected to server");
+        var taskId = "{{ task_id }}";
+        if (taskId) {
+          socket.emit("track_task", { task_id: taskId });
+          document.getElementById("progress-container").style.display = "block";
+        }
+      });
 
-          fetch(this.action, {
-            method: "POST",
-            body: new FormData(this),
-          })
-            .then((response) => response.json())
-            .then((data) => {
-              if (data.task_id) {
-                taskId = data.task_id;
-                checkProgress();
-              }
-            });
-        });
+      socket.on("disconnect", function () {
+        console.log("Disconnected from server");
+      });
 
-      function checkProgress() {
-        if (!taskId) return;
+      socket.on("task_progress", function (data) {
+        document.getElementById("progress-bar").style.width =
+          data.percent + "%";
+        document.getElementById("progress-text").innerHTML =
+          "Progress: " + data.percent + "% - " + data.status;
+      });
 
-        fetch(`/task_status/${taskId}`)
-          .then((response) => response.json())
-          .then((data) => {
-            const progressBar = document.getElementById("progress-bar");
-            const progressText = document.getElementById("progress-text");
-            const statusText = document.getElementById("status-text");
-
-            progressBar.style.width = `${(data.current / data.total) * 100}%`;
-            progressText.textContent = `${Math.round(
-              (data.current / data.total) * 100
-            )}% Complete`;
-            statusText.textContent = data.status;
-
-            if (data.state !== "SUCCESS" && data.state !== "FAILURE") {
-              setTimeout(checkProgress, 1000);
-            }
-          });
-      }
+      document.addEventListener("DOMContentLoaded", function () {
+        var elems = document.querySelectorAll("select");
+        M.FormSelect.init(elems);
+      });
     </script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
   </body>
 </html>

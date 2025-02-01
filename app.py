@@ -1,4 +1,5 @@
 from flask import Flask, render_template, request, redirect, url_for, jsonify
+from flask_socketio import SocketIO, emit
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -12,11 +13,18 @@ from asin_scraper import create_database, get_existing_category
 import sqlite3
 
 app = Flask(__name__)
-UPLOAD_FOLDER = "uploads"
-app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
+app.config["UPLOAD_FOLDER"] = "uploads"
+app.config["SECRET_KEY"] = "secret!"
+socketio = SocketIO(
+    app,
+    message_queue="redis://redis:6379/0",
+    ping_timeout=60,
+    ping_interval=25,
+    cors_allowed_origins="*",
+)
 
-if not os.path.exists(UPLOAD_FOLDER):
-    os.makedirs(UPLOAD_FOLDER)
+if not os.path.exists(app.config["UPLOAD_FOLDER"]):
+    os.makedirs(app.config["UPLOAD_FOLDER"])
 
 create_database()  # Ensure the database is created at startup
 
@@ -265,35 +273,28 @@ def filter_by_category():
     )
 
 
-@app.route("/task_status/<task_id>")
-def task_status(task_id):
+@socketio.on("track_task")
+def handle_track_task(data):
+    task_id = data["task_id"]
     task = AsyncResult(task_id, app=celery)
-    if task.state == "PENDING":
-        response = {
-            "state": task.state,
-            "current": 0,
-            "total": 1,
-            "status": "Pending...",
-        }
-    elif task.state != "FAILURE":
-        response = {
-            "state": task.state,
-            "current": task.info.get("current", 0),
-            "total": task.info.get("total", 1),
-            "status": task.info.get("status", ""),
-        }
-        if "result" in task.info:
-            response["result"] = task.info["result"]
-    else:
-        # something went wrong in the background job
-        response = {
-            "state": task.state,
-            "current": 1,
-            "total": 1,
-            "status": str(task.info),  # this is the exception raised
-        }
-    return jsonify(response)
+
+    while task.state not in ["SUCCESS", "FAILURE"]:
+        socketio.sleep(1)
+        task = AsyncResult(task_id, app=celery)
+        if task.state == "PROGRESS":
+            socketio.emit(
+                "task_progress",
+                {
+                    "percent": task.info.get("percent", 0),
+                    "status": task.info.get("status", ""),
+                },
+            )
+
+    if task.state == "SUCCESS":
+        socketio.emit("task_progress", {"percent": 100, "status": "Task completed!"})
+    elif task.state == "FAILURE":
+        socketio.emit("task_progress", {"percent": 0, "status": "Task failed!"})
 
 
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0")
+    socketio.run(app, debug=True, host="0.0.0.0")

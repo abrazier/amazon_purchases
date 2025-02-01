@@ -3,7 +3,8 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-data/
+/data/
+/uploads/
 
 .DS_Store
 

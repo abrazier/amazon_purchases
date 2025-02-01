@@ -1,3 +1,5 @@
+version: "3.8"
+
 services:
   app:
     build: .
@@ -5,13 +7,12 @@ services:
     ports:
       - "5001:5000"
     volumes:
-      - ./uploads:/app/uploads # optional if you want to save uploads
-      - ./data:/app/data # Add this line for database persistence
+      - ./data:/app/data
+      - ./uploads:/app/uploads
     depends_on:
       - redis
     environment:
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - FLASK_ENV=development
 
   redis:
     image: "redis:alpine"
@@ -20,10 +21,14 @@ services:
   celery_worker:
     build: .
     command: celery -A celery_worker.celery worker --loglevel=info
-    depends_on:
-      - redis
+    user: appuser
+    working_dir: /app
     volumes:
       - ./data:/app/data
+      - ./uploads:/app/uploads
     environment:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - C_FORCE_ROOT=false
+    depends_on:
+      - redis
