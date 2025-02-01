@@ -48,227 +48,141 @@ def index():
     graph_yearly = ""
     dark_mode = request.form.get("dark_mode", "light")
 
-    if request.method == "POST":
-        file = request.files.get("file")
-        if file:
-            # Generate a unique filename using the original filename and a timestamp
-            timestamp = int(time.time())
-            filename = f"{timestamp}_{file.filename}"
-            file_path = os.path.join(app.config["UPLOAD_FOLDER"], filename)
-            file.save(file_path)
-            df = pd.read_csv(file_path)
-        else:
-            file_path = request.form.get("file_path")
-            if file_path:
+    try:
+        if request.method == "POST":
+            print("POST request received")
+            file = request.files.get("file")
+            if file:
+                print("File uploaded")
+                # Generate a unique filename using the original filename and a timestamp
+                timestamp = int(time.time())
+                filename = f"{timestamp}_{file.filename}"
+                file_path = os.path.join(app.config["UPLOAD_FOLDER"], filename)
+                file.save(file_path)
                 df = pd.read_csv(file_path)
             else:
-                return redirect(url_for("index"))
+                file_path = request.form.get("file_path")
+                if file_path:
+                    print("Using existing file path")
+                    df = pd.read_csv(file_path)
+                else:
+                    print("No file path provided")
+                    return redirect(url_for("index"))
 
-        df["Order Date"] = pd.to_datetime(df["Order Date"], errors="coerce")
-        df["month"] = df["Order Date"].dt.to_period("M")
-        df["year"] = df["Order Date"].dt.year
+            print("Processing DataFrame")
+            df["Order Date"] = pd.to_datetime(df["Order Date"], errors="coerce")
+            df["month"] = df["Order Date"].dt.to_period("M")
+            df["year"] = df["Order Date"].dt.year
 
-        billing_addresses = extract_unique_addresses(df["Billing Address"].unique())
+            billing_addresses = extract_unique_addresses(df["Billing Address"].unique())
+            print(f"Billing addresses: {billing_addresses}")
 
-        selected_billing = request.form.getlist("billing_address")
+            selected_billing = request.form.getlist("billing_address")
+            print(f"Selected billing addresses: {selected_billing}")
+            filtered_df = df
+            if selected_billing:
+                filtered_df = filtered_df[
+                    filtered_df["Billing Address"].apply(
+                        lambda x: any(addr in x.lower() for addr in selected_billing)
+                    )
+                ]
 
-        filtered_df = df
-        if selected_billing:
-            filtered_df = filtered_df[
-                filtered_df["Billing Address"].apply(
-                    lambda x: any(addr in x.lower() for addr in selected_billing)
+            monthly_totals = (
+                filtered_df.groupby("month")["Total Owed"].sum().reset_index()
+            )
+            monthly_totals["month"] = monthly_totals["month"].dt.strftime("%b-%Y")
+
+            yearly_totals = (
+                filtered_df.groupby("year")["Total Owed"].sum().reset_index()
+            )
+
+            # Calculate 3-month rolling average
+            monthly_totals["3_month_avg"] = (
+                monthly_totals["Total Owed"].rolling(window=3).mean()
+            )
+
+            # Calculate 3-year rolling average
+            yearly_totals["3_year_avg"] = (
+                yearly_totals["Total Owed"].rolling(window=3).mean()
+            )
+
+            fig_monthly = px.bar(
+                monthly_totals,
+                x="month",
+                y="Total Owed",
+                labels={"Total Owed": "Total Spent ($)"},
+            )
+            fig_yearly = px.bar(
+                yearly_totals,
+                x="year",
+                y="Total Owed",
+                labels={"Total Owed": "Total Spent ($)"},
+            )
+
+            fig_monthly.update_layout(yaxis_tickprefix="$", yaxis_tickformat=",")
+            fig_yearly.update_layout(yaxis_tickprefix="$", yaxis_tickformat=",")
+
+            fig_monthly.update_traces(texttemplate="%{y:$,.2f}", textposition="outside")
+            fig_yearly.update_traces(texttemplate="%{y:$,.2f}", textposition="outside")
+
+            # Add trend lines
+            fig_monthly.add_trace(
+                go.Scatter(
+                    x=monthly_totals["month"],
+                    y=monthly_totals["3_month_avg"],
+                    mode="lines",
+                    name="3-Month Average",
+                    line=dict(color="firebrick", width=2),
                 )
-            ]
-
-        monthly_totals = filtered_df.groupby("month")["Total Owed"].sum().reset_index()
-        monthly_totals["month"] = monthly_totals["month"].dt.strftime("%b-%Y")
-
-        yearly_totals = filtered_df.groupby("year")["Total Owed"].sum().reset_index()
-
-        # Calculate 3-month rolling average
-        monthly_totals["3_month_avg"] = (
-            monthly_totals["Total Owed"].rolling(window=3).mean()
-        )
-
-        # Calculate 3-year rolling average
-        yearly_totals["3_year_avg"] = (
-            yearly_totals["Total Owed"].rolling(window=3).mean()
-        )
-
-        fig_monthly = px.bar(
-            monthly_totals,
-            x="month",
-            y="Total Owed",
-            labels={"Total Owed": "Total Spent ($)"},
-        )
-        fig_yearly = px.bar(
-            yearly_totals,
-            x="year",
-            y="Total Owed",
-            labels={"Total Owed": "Total Spent ($)"},
-        )
-
-        fig_monthly.update_layout(yaxis_tickprefix="$", yaxis_tickformat=",")
-        fig_yearly.update_layout(yaxis_tickprefix="$", yaxis_tickformat=",")
-
-        fig_monthly.update_traces(texttemplate="%{y:$,.2f}", textposition="outside")
-        fig_yearly.update_traces(texttemplate="%{y:$,.2f}", textposition="outside")
-
-        # Add trend lines
-        fig_monthly.add_trace(
-            go.Scatter(
-                x=monthly_totals["month"],
-                y=monthly_totals["3_month_avg"],
-                mode="lines",
-                name="3-Month Average",
-                line=dict(color="firebrick", width=2),
             )
-        )
-        fig_yearly.add_trace(
-            go.Scatter(
-                x=yearly_totals["year"],
-                y=yearly_totals["3_year_avg"],
-                mode="lines",
-                name="3-Year Average",
-                line=dict(color="firebrick", width=2),
+            fig_yearly.add_trace(
+                go.Scatter(
+                    x=yearly_totals["year"],
+                    y=yearly_totals["3_year_avg"],
+                    mode="lines",
+                    name="3-Year Average",
+                    line=dict(color="firebrick", width=2),
+                )
             )
-        )
 
-        graph_monthly = pio.to_html(fig_monthly, full_html=False)
-        graph_yearly = pio.to_html(fig_yearly, full_html=False)
+            graph_monthly = pio.to_html(fig_monthly, full_html=False)
+            graph_yearly = pio.to_html(fig_yearly, full_html=False)
 
-        # Trigger the background task to scrape ASIN categories
-        asins = df["ASIN"].unique().tolist()
-        task = scrape_asins_task.delay(asins)
+            if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+                print("AJAX request detected")
+                # Trigger the background task to scrape ASIN categories
+                asins = df["ASIN"].unique().tolist()
+                task = scrape_asins_task.delay(asins)
+                return jsonify(
+                    {
+                        "graph_monthly": graph_monthly,
+                        "graph_yearly": graph_yearly,
+                        "task_id": task.id,
+                        "billing_addresses": billing_addresses,
+                    }
+                )
 
-        return render_template(
-            "index.html",
-            graph_monthly=graph_monthly,
-            graph_yearly=graph_yearly,
-            billing_addresses=billing_addresses,
-            file_path=file_path,
-            dark_mode=dark_mode,
-            task_id=task.id,
-        )
+            return render_template(
+                "index.html",
+                graph_monthly=graph_monthly,
+                graph_yearly=graph_yearly,
+                billing_addresses=billing_addresses,
+                file_path=file_path,
+                dark_mode=dark_mode,
+            )
+
+    except Exception as e:
+        print(f"Error: {e}")
+        if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+            return jsonify({"error": str(e)}), 500
+        else:
+            return render_template("error.html", error=str(e)), 500
 
     return render_template(
         "index.html",
         graph_monthly=graph_monthly,
         graph_yearly=graph_yearly,
         billing_addresses=billing_addresses,
-        dark_mode=dark_mode,
-    )
-
-
-@app.route("/filter_by_category", methods=["GET", "POST"])
-def filter_by_category():
-    categories = []
-    graph_monthly = ""
-    graph_yearly = ""
-    dark_mode = request.form.get("dark_mode", "light")
-
-    if request.method == "POST":
-        file_path = request.form.get("file_path")
-        if file_path:
-            df = pd.read_csv(file_path)
-        else:
-            return redirect(url_for("index"))
-
-        df["Order Date"] = pd.to_datetime(df["Order Date"], errors="coerce")
-        df["month"] = df["Order Date"].dt.to_period("M")
-        df["year"] = df["Order Date"].dt.year
-
-        # Get unique categories from the database
-        conn = sqlite3.connect("data/asin_categories.db")
-        cursor = conn.cursor()
-        cursor.execute("SELECT DISTINCT category FROM asin_categories")
-        categories = [row[0] for row in cursor.fetchall()]
-        conn.close()
-
-        selected_category = request.form.get("category")
-
-        if selected_category and selected_category != "All":
-            asins = df["ASIN"].unique().tolist()
-            filtered_asins = []
-            for asin in asins:
-                category = get_existing_category(asin)
-                if category == selected_category:
-                    filtered_asins.append(asin)
-            filtered_df = df[df["ASIN"].isin(filtered_asins)]
-        else:
-            filtered_df = df
-
-        monthly_totals = filtered_df.groupby("month")["Total Owed"].sum().reset_index()
-        monthly_totals["month"] = monthly_totals["month"].dt.strftime("%b-%Y")
-
-        yearly_totals = filtered_df.groupby("year")["Total Owed"].sum().reset_index()
-
-        # Calculate 3-month rolling average
-        monthly_totals["3_month_avg"] = (
-            monthly_totals["Total Owed"].rolling(window=3).mean()
-        )
-
-        # Calculate 3-year rolling average
-        yearly_totals["3_year_avg"] = (
-            yearly_totals["Total Owed"].rolling(window=3).mean()
-        )
-
-        fig_monthly = px.bar(
-            monthly_totals,
-            x="month",
-            y="Total Owed",
-            labels={"Total Owed": "Total Spent ($)"},
-        )
-        fig_yearly = px.bar(
-            yearly_totals,
-            x="year",
-            y="Total Owed",
-            labels={"Total Owed": "Total Spent ($)"},
-        )
-
-        fig_monthly.update_layout(yaxis_tickprefix="$", yaxis_tickformat=",")
-        fig_yearly.update_layout(yaxis_tickprefix="$", yaxis_tickformat=",")
-
-        fig_monthly.update_traces(texttemplate="%{y:$,.2f}", textposition="outside")
-        fig_yearly.update_traces(texttemplate="%{y:$,.2f}", textposition="outside")
-
-        # Add trend lines
-        fig_monthly.add_trace(
-            go.Scatter(
-                x=monthly_totals["month"],
-                y=monthly_totals["3_month_avg"],
-                mode="lines",
-                name="3-Month Average",
-                line=dict(color="firebrick", width=2),
-            )
-        )
-        fig_yearly.add_trace(
-            go.Scatter(
-                x=yearly_totals["year"],
-                y=yearly_totals["3_year_avg"],
-                mode="lines",
-                name="3-Year Average",
-                line=dict(color="firebrick", width=2),
-            )
-        )
-
-        graph_monthly = pio.to_html(fig_monthly, full_html=False)
-        graph_yearly = pio.to_html(fig_yearly, full_html=False)
-
-        return render_template(
-            "filter_by_category.html",
-            graph_monthly=graph_monthly,
-            graph_yearly=graph_yearly,
-            categories=categories,
-            file_path=file_path,
-            dark_mode=dark_mode,
-        )
-
-    return render_template(
-        "filter_by_category.html",
-        graph_monthly=graph_monthly,
-        graph_yearly=graph_yearly,
-        categories=categories,
         dark_mode=dark_mode,
     )
 
