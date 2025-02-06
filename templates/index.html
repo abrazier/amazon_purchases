@@ -125,7 +125,11 @@
           <input type="hidden" name="file_path" value="{{ file_path }}" />
           <button type="submit" class="btn">Show Graphs</button>
 
-          <div class="progress-container" id="progress-container">
+          <div
+            class="progress-container"
+            id="progress-container"
+            style="display: none"
+          >
             <h5>Scraping Progress</h5>
             <div class="progress">
               <div
@@ -138,14 +142,29 @@
           </div>
 
           <div class="row">
-            <div class="col s12">
-              <h2>Filter by Billing Address</h2>
+            <div class="col s12" id="billing-filter-container">
+              <h2>Filter by Billing Date</h2>
               {% for address in billing_addresses %}
               <label>
                 <input type="checkbox" name="billing_address" value="{{ address
                 }}" onchange="submitForm()" {% if address in
                 request.form.getlist('billing_address') %}checked{% endif %}>
                 <span>{{ address }}</span>
+              </label>
+              <br />
+              {% endfor %}
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="col s12" id="category-filter-container">
+              <h2>Filter by Category</h2>
+              {% for category in categories %}
+              <label>
+                <input type="checkbox" name="category" value="{{ category }}"
+                onchange="submitForm()" {% if category in
+                request.form.getlist('category') %}checked{% endif %}>
+                <span>{{ category }}</span>
               </label>
               <br />
               {% endfor %}
@@ -207,6 +226,10 @@
           data.percent + "%";
         document.getElementById("progress-text").innerHTML =
           "Progress: " + data.percent + "% - " + data.status;
+        if (data.percent === 100) {
+          console.log("Scraping completed. Fetching categories...");
+          fetchCategories();
+        }
       });
 
       document.addEventListener("DOMContentLoaded", function () {
@@ -275,6 +298,32 @@
                     document.createElement("br")
                   );
                 });
+
+                // Update categories
+                if (response.categories) {
+                  console.log("Categories in response:", response.categories);
+                  var categoriesContainer =
+                    document.querySelector(".row .col.s12");
+                  categoriesContainer.innerHTML = "<h2>Filter by Category</h2>";
+                  response.categories.forEach(function (category) {
+                    var label = document.createElement("label");
+                    var input = document.createElement("input");
+                    input.type = "checkbox";
+                    input.name = "category";
+                    input.value = category;
+                    input.onchange = submitForm;
+                    var span = document.createElement("span");
+                    span.textContent = category;
+                    label.appendChild(input);
+                    label.appendChild(span);
+                    categoriesContainer.appendChild(label);
+                    categoriesContainer.appendChild(
+                      document.createElement("br")
+                    );
+                  });
+                } else {
+                  console.log("No categories found in response.");
+                }
               } else {
                 console.error("AJAX request failed with status: " + xhr.status);
                 console.error(xhr.responseText);
@@ -289,7 +338,50 @@
 
       function submitForm() {
         console.log("Submitting form");
-        document.getElementById("filter-form").submit();
+        // Use requestSubmit instead of submit() to trigger the event listeners
+        document.getElementById("filter-form").requestSubmit();
+      }
+
+      function fetchCategories() {
+        console.log("Fetching categories...");
+        var xhr = new XMLHttpRequest();
+        xhr.open("GET", "/fetch_categories", true);
+        xhr.onload = function () {
+          if (xhr.status === 200) {
+            var response = JSON.parse(xhr.responseText);
+            console.log("Categories fetched:", response.categories);
+            var categoriesContainer = document.getElementById(
+              "category-filter-container"
+            );
+            var html = "<h2>Filter by Category</h2>";
+            if (response.categories && response.categories.length) {
+              categoriesContainer.innerHTML = "<h2>Filter by Category</h2>";
+              response.categories.forEach(function (category) {
+                var label = document.createElement("label");
+                var input = document.createElement("input");
+                input.type = "checkbox";
+                input.name = "category";
+                input.value = category;
+                input.onchange = submitForm;
+                var span = document.createElement("span");
+                span.textContent = category;
+                label.appendChild(input);
+                label.appendChild(span);
+                categoriesContainer.appendChild(label);
+                categoriesContainer.appendChild(document.createElement("br"));
+              });
+            } else {
+              html += "<p>No categories available.</p>";
+              categoriesContainer.innerHTML = html;
+            }
+          } else {
+            console.error("Failed to fetch categories");
+          }
+        };
+        xhr.onerror = function () {
+          console.error("Failed to fetch categories");
+        };
+        xhr.send();
       }
     </script>
   </body>
